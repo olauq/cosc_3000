@@ -315,8 +315,8 @@ int main(int argc, char* argv[])
 	glutInitContextFlags(GLUT_DEBUG);
 
 	glutInit(&argc, argv);
-	glutSetOption(GLUT_MULTISAMPLE, 8);
-	glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE | GLUT_MULTISAMPLE);
+	//glutSetOption(GLUT_MULTISAMPLE, 8);
+	glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);// | GLUT_MULTISAMPLE
 	glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
 
 	glutInitWindowSize(g_startWidth, g_startHeight);
