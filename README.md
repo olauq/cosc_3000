@@ -1,2 +1,30 @@
 # cosc_3000
-Extra sample code for the studens of the course COSC3000 at the University of Queensland. 
+Extra sample code for the studens of the (graphics part) of the course COSC3000 at the University of Queensland. 
+
+## Projects:
+All of the examples come with their own visual studio 2015 projects and solutions, found in the respective sub-folder.
+They all use FreeGLUT [1], the OpenGL Extension Wrangler (GLEW) [2] and the OpenGL Math Library (GLM) [3].
+
+### ray_tracer
+This proect implements a ray tracer that is as simple as I could make it. It directly ray-traces a single hard coded sphere.
+For a more well-structurd, and extensible (but somewhat longer) ray tracer, please see the 'structured_ray_tracer' proect.
+
+### rasterizer
+Same graphical output as the ray-tracer, using a minimum of non-legacy OpenGL. This means not using any fixed funciton for shading
+or glVertex and the like for geomtry.
+
+### rasterizer_legacy_gl
+Same again, but this time using legacy OpenGL, and glutSolidSphere to simplify the program. Notably, the shading is different though
+since the fixed function pipeline cannot readily re-create my distance based shading I hacked up for the previous examples.
+
+### rasterizer_python
+Python implementation of the rasterizer project (that is modern OpenGL) - NOT currently working for some reason.
+
+### structured_ray_tracer
+ray tracer implementation with more structure that makes the main loop more easy to read, it is also a much better starting point for 
+building something supporting more than one object and multiple materials. Or if one wanted to plug in an acceleration structure say.
+
+## References
+[1] FreeGLUT http://freeglut.sourceforge.net/
+[2] GLEW http://glew.sourceforge.net/
+[3]	GLM  http://glew.sourceforge.net/
