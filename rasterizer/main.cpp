@@ -6,10 +6,8 @@
 // we need (or somethis similar) it to access pretty much all post OpenGL 2.0 functionality: http://glew.sourceforge.net/
 // All OpenGL extensions (and the standard specification) are available in the OpenGL registry: http://www.opengl.org/registry/
 #include <GL/glew.h>
+// Freeglut is an implementation of GLUT, with some notable extensions!
 #include <GL/freeglut.h>
-
-// TODO: 2. some more comments.
-//       3. Tidy up shading calculations a bit
 
 
 // Any graphics program needs a vector maths library!
@@ -17,14 +15,12 @@
 // domain specific language that is used to write shaders. This makes it easier to move code from one to the other and means the GLSL spec can be used as
 // guide to usage.
 #include <glm/glm.hpp>
-
 // Include for matrix building operations, these are extensions that go beyond what is found in the glsl spec, but that we need to write useful graphics programs.
-#include <glm/gtc/matrix_transform.hpp>
-// For more convenient definition of transforms
 #include <glm/gtx/transform.hpp>
 // To be able to get a pointer to upload to OpenGL
 #include <glm/gtc/type_ptr.hpp>
 
+// some basic C/C++ standard library includes
 #include <stdio.h>
 #include <vector>
 #include <algorithm>
@@ -75,8 +71,10 @@ inline float degreesToRadians(float degs)
 
 const int g_numSphereSubdivs = 4;
 static int g_numSphereVerts = -1; /**< This must be initialized somewhere! (see main) */
+
 /**
- * Recursively subdivide a triangle with its vertices on the surface of the unit sphere such that the new vertices also are on part of the unit sphere.
+ * Recursively subdivide a triangle into four equally sized sub-triangles.
+ * Input vertices are assumed to be on the surface of the unit sphere amd the new vertices also are on part of the unit sphere.
  */
 static void subDivide(std::vector<vec3> &dest, const vec3 &v0, const vec3 &v1, const vec3 &v2, int level)
 {
@@ -111,7 +109,7 @@ static void subDivide(std::vector<vec3> &dest, const vec3 &v0, const vec3 &v1, c
  * a double unit pyramid (try giving subdivisions == 0). The resulting number of vertices is thus 3*4^numSubDivisionLevels
  * (^ here meaning to the power of). 
  */
-static std::vector<vec3> createSphere(int numSubDivisionLevels)
+static std::vector<vec3> createUnitSphereVertices(int numSubDivisionLevels)
 {
 	std::vector<vec3>	sphereVerts;
 
@@ -130,7 +128,14 @@ static std::vector<vec3> createSphere(int numSubDivisionLevels)
 }
 
 
-
+/**
+ * This function takes an array of vertex positions and creates a buffer object to store this data, which is then initialized,
+ * and the data is uploaded. Then a vertex array object is created to reference the buffer as an attribute array 
+ * and provide type information. The attribute array used is 'VAL_Position' declared in global scope.
+ * The attribute array is also enabled.
+ * For an animated presentation of how this works with OpenGL, take a look at the power point slide deck
+ *  createVertexArrayObject.pptx (which should be in the docs folder of this repo) - it should help explaining how OpenGL likes to do things.
+ */
 void createVertexArrayObject(const std::vector<vec3> &vertexPositions, GLuint &positionBuffer, GLuint &vertexArrayObject)
 {
 	// glGen*(<count>, <array of GLuint>) is the typical pattern for creating objects in OpenGL. Do pay attention to this idiosyncrasy as the first parameter indicates the
@@ -163,7 +168,7 @@ void createVertexArrayObject(const std::vector<vec3> &vertexPositions, GLuint &p
 
 
 
-// Called by GLUT system when a frame needs to be drawn
+// Called by GLUT system when a frame needs to be drawn (we provide GLUT with a pointer in main() )
 static void onGlutDisplay()
 {
 	int height = glutGet(GLUT_WINDOW_HEIGHT);
@@ -420,7 +425,7 @@ void main()
 	}
 
 	// Create sphere vertex data and upload to OpenGL
-	std::vector<vec3> sphereVerts = createSphere(g_numSphereSubdivs);
+	std::vector<vec3> sphereVerts = createUnitSphereVertices(g_numSphereSubdivs);
 	g_numSphereVerts = int(sphereVerts.size());
 	createVertexArrayObject(sphereVerts, g_sphereVertexDataBuffer, g_sphereVertexArrayObject);
 
