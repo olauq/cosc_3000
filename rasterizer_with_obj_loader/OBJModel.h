@@ -102,11 +102,11 @@ public:
 	 */
 	static void bindDefaultAttributes(GLuint shaderProgram)
 	{
-		glBindAttribLocation(shaderProgram, AA_Position, "position");
-		glBindAttribLocation(shaderProgram, AA_Normal, "normalIn");
-		glBindAttribLocation(shaderProgram, AA_TexCoord, "texCoordIn");
-		glBindAttribLocation(shaderProgram, AA_Tangent, "tangentIn");
-		glBindAttribLocation(shaderProgram, AA_Bitangent, "bitangentIn");
+		glBindAttribLocation(shaderProgram, AA_Position, "positionAttribute");
+		glBindAttribLocation(shaderProgram, AA_Normal, "normalAttribute");
+		glBindAttribLocation(shaderProgram, AA_TexCoord, "texCoordAttribute");
+		glBindAttribLocation(shaderProgram, AA_Tangent, "tangentAttribute");
+		glBindAttribLocation(shaderProgram, AA_Bitangent, "bitangentAttribute");
 	}
 
 
@@ -154,25 +154,24 @@ public:
 
 		float alpha;
     size_t offset;
-		std::string shadingModel;
 	};
 
 
   typedef std::map<std::string, Material> MatrialMap;
 	MatrialMap m_materials;
 
-  // maps to layout of uniforms under std140 layout.
+  // Matches layout of uniform buffer under std140 layout (OpenGL spec.).
   struct MaterialProperties_Std140
   {
     glm::vec3 diffuse_color; 
-    float alpha;
+    float alpha; 
     glm::vec3 specular_color; 
-    float pad1;
+    float pad1; // padding is required to ensure vectors start on multiples of 4
     glm::vec3 emissive_color; 
     float specular_exponent;
     // this meets the alignment required for uniform buffer offsets on NVidia GTX280/480, also 
-    // compatible with AMD integrated Radeon HD 3100.
-    float alignPad[52];
+    // compatible with AMD integrated Radeon HD 3100, and modern Intel ingerated GPUs (16 bytes).
+    float alignPad[52]; // Pads struct to 256 bytes, large enough for everyone...
   };
   GLuint m_materialPropertiesBuffer;
 
@@ -202,7 +201,6 @@ public:
 	GLuint	m_vaob;
 
 	std::vector<Chunk> m_chunks;
-	std::set<std::string> m_shadingModels;
 
   Aabb m_aabb;
   GLuint m_defaultTextureOne; /**< all 1, single pixel texture to use when no texture is loaded. */
@@ -210,7 +208,7 @@ public:
 
 	friend struct SortAlphaChunksPred;
 
-	bool m_overrideDiffureTextureWithDefault;
+	bool m_overrideDiffuseTextureWithDefault;
 };
 
 #endif // __OBJModel_h_

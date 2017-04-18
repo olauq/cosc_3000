@@ -30,41 +30,31 @@
 // We're using the 3 dimensional vector & 4x4 dimensional matrix types of GLM, so we alias them into the global name space.
 // The type of the elements of these types is 'float' i.e., single precision (32-bit) floating point numbers.
 using glm::vec3;
+using glm::vec4;
 using glm::mat4;
 
 // Initial window size for GLUT
 const int g_startWidth  = 1280;
 const int g_startHeight = 720;
 
-// Definition of sphere.
-static vec3 g_spherePos = { 0.0f, 0.0f, 0.0f };
-static float g_sphereRadius = 3.0f;
-const vec3 g_sphereColour = { 0.2f, 0.3f, 1.0f };
-
+// Model that is loaded from an OBJ file
 OBJModel *g_model = 0;
 
 // Definition of virtual camera
-static vec3 g_viewPosition = { 0.0f, 0.0f, -10.0f };
-static vec3 g_viewTarget = { 0.0f, 0.0f, 0.0f };
+static vec3 g_viewPosition = { -1250.0f, 650.0f, 50.0f };
+//static vec3 g_viewPosition = { 1000.0f, 150.0f, 50.0f };
+static vec3 g_viewTarget = { 1250.0f, 100.0f, 0.0f };
 static vec3 g_viewUp = { 0.0f, 1.0f, 0.0f };
-static float g_fov = 45.0f;
-const float g_nearDistance = 0.1f;
-const float g_farDistance = 100000.0f;
+static float g_fov = 70.0f;
+const float g_nearDistance = 0.1f; // TODO: Play with near clip distance, what happens if you set it to 100? 500?
+const float g_farDistance = 100000.0f; // TODO: Play with far distance, what happens if you set it to 1000?
 
 // 
 const vec3 g_backGroundColour = { 0.1f, 0.2f, 0.1f };
+const vec3 g_lightDirection = { 0.2f, 1.0f, -0.2f };
 
-// OpenGL objects and suchlike
-
-// We explicitly specify the attribute locations to use for the different attributes, we must also ensure the shader knows about this using glBindAttribLocation()
-enum VertexAttribLocations
-{
-	VAL_Position = 0,
-};
-
-GLuint g_sphereVertexDataBuffer = 0U;
-GLuint g_sphereVertexArrayObject = 0U;
 GLuint g_simpleShader = 0U;
+
 
 // 4. Misc...
 static const float g_pi = 3.1415f;
@@ -72,104 +62,6 @@ inline float degreesToRadians(float degs)
 {
 	return degs * g_pi / 180.0f;
 }
-
-const int g_numSphereSubdivs = 4;
-static int g_numSphereVerts = -1; /**< This must be initialized somewhere! (see main) */
-
-/**
- * Recursively subdivide a triangle into four equally sized sub-triangles.
- * Input vertices are assumed to be on the surface of the unit sphere amd the new vertices also are on part of the unit sphere.
- */
-static void subDivide(std::vector<vec3> &dest, const vec3 &v0, const vec3 &v1, const vec3 &v2, int level)
-{
-	// If the level index/counter is non-zero...
-	if (level)
-	{
-		// ...we subdivide the input triangle into four equal sub-triangles
-		// The mid points are the half way between to vertices, which is really (v0 + v2) / 2, but 
-		// instead we normalize the vertex to 'push' it out to the surface of the unit sphere.
-		vec3 v3 = normalize(v0 + v1);
-		vec3 v4 = normalize(v1 + v2);
-		vec3 v5 = normalize(v2 + v0);
-
-		// ...and then recursively call this function for each of those (with the level decreased by one)
-		subDivide(dest, v0, v3, v5, level - 1);
-		subDivide(dest, v3, v4, v5, level - 1);
-		subDivide(dest, v3, v1, v4, level - 1);
-		subDivide(dest, v5, v4, v2, level - 1);
-	}
-	else
-	{
-		// If we have reached the terminating level, just output the vertex position
-		dest.push_back(v0);
-		dest.push_back(v1);
-		dest.push_back(v2);
-	}
-}
-
-
-/**
- * This function creates the geometry for a unit sphere by using the subDivide helper function to recursively subdivide 
- * a double unit pyramid (try giving subdivisions == 0). The resulting number of vertices is thus 3*4^numSubDivisionLevels
- * (^ here meaning to the power of). 
- */
-static std::vector<vec3> createUnitSphereVertices(int numSubDivisionLevels)
-{
-	std::vector<vec3>	sphereVerts;
-
-	// The root level sphere is formed from 8 triangles in a diamond shape (two pyramids)
-	subDivide(sphereVerts, vec3(0, 1, 0), vec3(0, 0, 1), vec3(1, 0, 0), numSubDivisionLevels);
-	subDivide(sphereVerts, vec3(0, 1, 0), vec3(1, 0, 0), vec3(0, 0, -1), numSubDivisionLevels);
-	subDivide(sphereVerts, vec3(0, 1, 0), vec3(0, 0, -1), vec3(-1, 0, 0), numSubDivisionLevels);
-	subDivide(sphereVerts, vec3(0, 1, 0), vec3(-1, 0, 0), vec3(0, 0, 1), numSubDivisionLevels);
-
-	subDivide(sphereVerts, vec3(0, -1, 0), vec3(1, 0, 0), vec3(0, 0, 1), numSubDivisionLevels);
-	subDivide(sphereVerts, vec3(0, -1, 0), vec3(0, 0, 1), vec3(-1, 0, 0), numSubDivisionLevels);
-	subDivide(sphereVerts, vec3(0, -1, 0), vec3(-1, 0, 0), vec3(0, 0, -1), numSubDivisionLevels);
-	subDivide(sphereVerts, vec3(0, -1, 0), vec3(0, 0, -1), vec3(1, 0, 0), numSubDivisionLevels);
-
-	return sphereVerts;
-}
-
-
-/**
- * This function takes an array of vertex positions and creates a buffer object to store this data, which is then initialized,
- * and the data is uploaded. Then a vertex array object is created to reference the buffer as an attribute array 
- * and provide type information. The attribute array used is 'VAL_Position' declared in global scope.
- * The attribute array is also enabled.
- * For an animated presentation of how this works with OpenGL, take a look at the power point slide deck
- *  createVertexArrayObject.pptx (which should be in the docs folder of this repo) - it should help explaining how OpenGL likes to do things.
- */
-void createVertexArrayObject(const std::vector<vec3> &vertexPositions, GLuint &positionBuffer, GLuint &vertexArrayObject)
-{
-	// glGen*(<count>, <array of GLuint>) is the typical pattern for creating objects in OpenGL. Do pay attention to this idiosyncrasy as the first parameter indicates the
-	// number of objects we want created. Usually this is just one, but if you were to change the below code to '2' OpenGL would happily overwrite whatever is after
-	// 'positionBuffer' on the stack (this leads to nasty bugs that are sometimes very hard to detect - i.e., this was a poor design choice!)
-	glGenBuffers(1, &positionBuffer);
-	glBindBuffer(GL_ARRAY_BUFFER, positionBuffer);
-	// Upload data to the currently bound GL_ARRAY_BUFFER, note that this is completely anonymous binary data, no type information is retained (we'll supply that later in glVertexAttribPointer)
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vec3) * vertexPositions.size(), &vertexPositions[0], GL_STATIC_DRAW);
-
-	glGenVertexArrays(1, &vertexArrayObject);
-	glBindVertexArray(vertexArrayObject);
-
-	// The positionBuffer is already bound to the GL_ARRAY_BUFFER location. This is typycal OpenGL style - you bind the buffer to GL_ARRAY_BUFFER,
-	// and the vertex array object using 'glBindVertexArray', and then glVertexAttribPointer implicitly uses both of these. You often need to read the manual
-	// or find example code.
-	// 'VAL_Position' is an integer, which tells it which array we want to attach this data to, this must be the same that we set up our shader
-	// using glBindAttribLocation. Next provide we type information about the data in the buffer: there are three components (x,y,z) per element (position)
-	// and they are of type 'float'. The last arguments can be used to describe the layout in more detail (stride  & offset).
-	// Note: The last adrgument is 'pointer' and has type 'const void *', however, in modern OpenGL, the data ALWAYS comes from the current GL_ARRAY_BUFFER object, 
-	// and 'pointer' is interpreted as an offset (which is somewhat clumsy).
-	glVertexAttribPointer(VAL_Position, 3, GL_FLOAT, false, 0, 0);
-	// For the currently bound vertex array object, enable the VAL_Position'th vertex array (otherwise the data is not fed to the shader)
-	glEnableVertexAttribArray(VAL_Position);
-
-	// Unbind the buffers again to avoid unintentianal GL state corruption (this is something that can be rather inconventient to debug)
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
-}
-
 
 
 // Called by GLUT system when a frame needs to be drawn (we provide GLUT with a pointer in main() )
@@ -191,32 +83,28 @@ static void onGlutDisplay()
 	// Projection (view to clip space transform)
 	const mat4 viewToClipTransform = glm::perspective(degreesToRadians(g_fov), aspectRatio, g_nearDistance, g_farDistance);
 
-	// define transformation matrix from sphere model space (which we take to be the origin).
-	// We'll also assume that it is a unit sphere, and so scale it to the specified radius
-	const mat4 sphereModelToWorldTransform = glm::translate(g_spherePos) * glm::scale(vec3(g_sphereRadius));
+	// define transformation matrix from model space, identity in this case: 
+	const mat4 modelToWorldTransform = glm::mat4(1.0f);
 
 	// Concatenate the transformations to take vertices directly from model space to clip space
-	const mat4 modelToClipTransform = viewToClipTransform * worldToViewTransform * sphereModelToWorldTransform;
+	const mat4 modelToClipTransform = viewToClipTransform * worldToViewTransform * modelToWorldTransform;
 	// Transform to view space from model space (used for the shading)
-	const mat4 modelToViewTransform = worldToViewTransform * sphereModelToWorldTransform;
+	const mat4 modelToViewTransform = worldToViewTransform * modelToWorldTransform;
 
 	// Bind 'use' current shader program 
 	glUseProgram(g_simpleShader);
 	// Set uniform argument in currently bound shader. glGetUniformLocation is typically not a super-fast operation and ought to be done ahead of time (much like other binding)
 	glUniformMatrix4fv(glGetUniformLocation(g_simpleShader, "modelToClipTransform"), 1, GL_FALSE, glm::value_ptr(modelToClipTransform));
 	glUniformMatrix4fv(glGetUniformLocation(g_simpleShader, "modelToViewTransform"), 1, GL_FALSE, glm::value_ptr(modelToViewTransform));
-	glUniform1f(glGetUniformLocation(g_simpleShader, "sphereRadius"), g_sphereRadius);
-	glUniform1f(glGetUniformLocation(g_simpleShader, "sphereDistance"), length(g_viewPosition - g_spherePos));
-	glUniform3fv(glGetUniformLocation(g_simpleShader, "sphereColour"), 1, glm::value_ptr(g_sphereColour));
-	
-	// Bind gl object storing the shphere mesh data (it is set up in main)
-	glBindVertexArray(g_sphereVertexArrayObject);
 
-	// https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glDrawArrays.xhtml
-	// Tell OpenGL to draw triangles using data from the currently bound vertex array object by grabbing
-	// three at a time vertices from the array up to g_numSphereVerts vertices, for(int i = 0; i < g_numSphereVerts; i += 3) ... draw triangle ...
-	glDrawArrays(GL_TRIANGLES, 0, g_numSphereVerts);
-	
+	vec3 viewSpaceLightDirection = normalize(vec3(modelToViewTransform * vec4(g_lightDirection, 0.0f)));
+	glUniform3fv(glGetUniformLocation(g_simpleShader, "viewSpaceLightDirection"), 1, glm::value_ptr(viewSpaceLightDirection));
+
+	// Draw different classes of geometry:
+	g_model->render(g_simpleShader, OBJModel::RF_Opaque, worldToViewTransform);
+	g_model->render(g_simpleShader, OBJModel::RF_AlphaTested, worldToViewTransform);
+	g_model->render(g_simpleShader, OBJModel::RF_Transparent, worldToViewTransform);
+
 	// Unbind the shader program & vertex array object to ensure it does not affect anything else (in this simple program, no great risk, but otherwise it pays to be careful)
 	glBindVertexArray(0);
 	glUseProgram(0);
@@ -326,7 +214,7 @@ int main(int argc, char* argv[])
 	glutInitWindowSize(g_startWidth, g_startHeight);
 
 	// NOTE: Before the window is created, there is probably no OpenGL context created, so any call to OpenGL will probably fail.
-	glutCreateWindow("A 'simple' OpenGL >= 3.0 program");
+	glutCreateWindow("A more complex OpenGL >= 3.0 program");
 
 	// glewInit sets up all the function pointers that map to pretty much all of modern OpenGL functionality, so any calls to those 
 	// before GLEW is intialized will fail.
@@ -342,12 +230,16 @@ int main(int argc, char* argv[])
 
 	printf("--------------------------------------\nOpenGL\n  Vendor: %s\n  Renderer: %s\n  Version: %s\n--------------------------------------\n", glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION));
 
-	// The source code for the vertex shader. The Vertex shader defines a program which is executed for every vertex in the models being drawn (in this case the sphere).
+	// The source code for the vertex shader. The Vertex shader defines a program which is executed for every vertex in the models being drawn
 	// The role of the vertex shader is to transform vertices into clip space, from which the fixed function hardware takes over for a while.
 	const char *vertexShader =
 		R"SOMETAG(
 #version 330
-in vec3 positionIn;
+
+in vec3 positionAttribute;
+in vec3	normalAttribute;
+in vec2	texCoordAttribute;
+
 uniform mat4 modelToClipTransform;
 uniform mat4 modelToViewTransform;
 
@@ -355,19 +247,21 @@ uniform mat4 modelToViewTransform;
 // For a pixel shader the variable is interpolated (the type of interpolation can be modified, try placing 'flat' in front, and also in the fragment shader!).
 out VertexData
 {
-	float v2f_distance;
+	vec3 v2f_viewSpaceNormal;
+	vec2 v2f_texCoord;
 };
 
 void main() 
 {
-  // Transform the vertex position to view space and calculate the distance, as this is used in the shading calculation
-	vec4 viewPos = modelToViewTransform * vec4(positionIn, 1.0);
-	v2f_distance = length(viewPos);
-
 	// gl_Position is a buit in out variable that gets passed on to the clipping and rasterization stages.
   // it must be written in order to produce any drawn geometry. 
   // We transform the position using one matrix multiply from model to clip space, note the added 1 at the end of the position.
-	gl_Position = modelToClipTransform * vec4(positionIn, 1.0);
+	gl_Position = modelToClipTransform * vec4(positionAttribute, 1.0);
+	// We transform the normal using the model to view transform, but only the rotation part, this is only OK if we know
+	// that there is only ever going ot be uniform scaling involved!
+	v2f_viewSpaceNormal = normalize(mat3(modelToViewTransform) * normalAttribute);
+	// The texture coordinate is just passed through
+	v2f_texCoord = texCoordAttribute;
 }
 )SOMETAG";
 
@@ -376,24 +270,54 @@ void main()
 	const char *fragmentShader =
 		R"SOMETAG(
 #version 330
+
 // Input from the vertex shader, will contain the interpolated (i.e., distance weighted average) vaule out put for each of the three vertex shaders that 
 // produced the vertex data for the triangle this fragmet is part of.
 in VertexData
 {
-	float v2f_distance;
+	vec3 v2f_viewSpaceNormal;
+	vec2 v2f_texCoord;
 };
 
-uniform float sphereDistance; // these are needed for the shading and are manually uploaded to the shader.
-uniform float sphereRadius; // 
-uniform vec3 sphereColour; // 
+// Material properties uniform buffer, required by OBJModel.
+// 'MaterialProperties' must be bound to a uniform buffer, OBJModel::setDefaultUniformBindings is of help!
+layout(std140) uniform MaterialProperties
+{
+  vec3 material_diffuse_color; 
+	float material_alpha;
+  vec3 material_specular_color; 
+  vec3 material_emissive_color; 
+  float material_specular_exponent;
+};
+// Textures set by OBJModel (names must be bound to the right texture unit, OBJModel::setDefaultUniformBindings helps with that.
+uniform sampler2D diffuse_texture;
+uniform sampler2D opacity_texture;
+uniform sampler2D specular_texture;
+uniform sampler2D normal_texture;
+
+// Other uniforms used by the shader
+uniform vec3 viewSpaceLightDirection;
 
 out vec4 fragmentColor;
 
+// If we do not convert the colour to srgb before writing it out it looks terrible! All our lighting is done in linear space
+// (which it should be!), and the frame buffer is srgb by default. So we must convert, or somehow create a linear frame buffer...
+vec3 toSrgb(vec3 color)
+{
+  return pow(color, vec3(1.0 / 2.2));
+}
+
 void main() 
 {
-  // Shading is designed to go from 1 at the nearest point of the sphere, to 0 at the furthest point
-	float shading = 1.0 - (v2f_distance - sphereDistance + sphereRadius) / (2.0 * sphereRadius);
-	fragmentColor = vec4(sphereColour, 1.0) * shading;
+	// Manual alpha test (note: alpha test is no longer part of Opengl 3.3).
+	if (texture2D(opacity_texture, v2f_texCoord).r < 0.5)
+	{
+		discard;
+	}
+
+	vec3 materialDiffuse = texture(diffuse_texture, v2f_texCoord).xyz * material_diffuse_color;
+	vec3 color = materialDiffuse * (0.1 + 0.9 * max(0.0, dot(v2f_viewSpaceNormal, viewSpaceLightDirection))) + material_emissive_color;
+	fragmentColor = vec4(toSrgb(color), material_alpha);
 }
 )SOMETAG";
 
@@ -406,7 +330,7 @@ void main()
 		// Link the name we used in the vertex shader 'positionIn' to the integer index we chose in 'VAL_Position'
 		// This ensures that when the shader executes, data fed into 'positionIn' will be sourced from the VAL_Position'th generic attribute stream
 		// This seemingly backwards way of telling the shader where to look allows OpenGL programs to swap vertex buffers without needing to do any string lookups at run time. 
-		glBindAttribLocation(g_simpleShader, VAL_Position, "positionIn");
+		OBJModel::bindDefaultAttributes(g_simpleShader);
 		
 		// If we have multiple images bound as render targets, we need to specify which 'out' variable in the fragment shader goes where.
 		// In this case it is totally redundant as we only have one (the default render target, or frame buffer) and the default binding is always zero.
@@ -421,17 +345,18 @@ void main()
 			printf("SHADER LINKER ERROR: '%s'", err.c_str());
 			return 1;
 		}
+
+		// 
+		glUseProgram(g_simpleShader);
+		OBJModel::setDefaultUniformBindings(g_simpleShader);
+		glUseProgram(0);
+
 	}
 	else
 	{
 		// bungled!
 			return 1;
 	}
-
-	// Create sphere vertex data and upload to OpenGL
-	std::vector<vec3> sphereVerts = createUnitSphereVertices(g_numSphereSubdivs);
-	g_numSphereVerts = int(sphereVerts.size());
-	createVertexArrayObject(sphereVerts, g_sphereVertexDataBuffer, g_sphereVertexArrayObject);
 
 	// Turn on backface culling, depth testing and set the depth function (possibly the degfault already, but why take any changes?)
 	glEnable(GL_CULL_FACE);

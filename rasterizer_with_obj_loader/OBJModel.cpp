@@ -66,7 +66,7 @@ vec3 transformPoint(const mat4 &m, const vec3 &pt)
 
 OBJModel::OBJModel(void) :
 m_numVerts(0),
-m_overrideDiffureTextureWithDefault(false)
+m_overrideDiffuseTextureWithDefault(false)
 {
 #if 1
 	// TODO: This is really not the best place for a thing like this, since we might be creating multiple models, on the other hand, not such a big deal either...
@@ -594,7 +594,6 @@ bool FLATTEN OBJModel::loadOBJ(std::ifstream &file, std::string basePath)
 	std::vector<MaterialProperties_Std140> tmpMaterials;
 	GLint uniformBufferAlignment;
 	glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &uniformBufferAlignment);
-	//printf("uniformBufferAlignment: %d\n", uniformBufferAlignment);
 	assert((sizeof(MaterialProperties_Std140) % uniformBufferAlignment) == 0);
 
 	for (std::map<std::string, Material>::iterator it = m_materials.begin(); it != m_materials.end(); ++it)
@@ -684,7 +683,7 @@ void OBJModel::render(GLuint shaderProgram, uint32_t renderFlags, const glm::mat
 				if (chunk.material != previousMaterial)
 				{
 					previousMaterial = chunk.material;
-					if (m_overrideDiffureTextureWithDefault)
+					if (m_overrideDiffuseTextureWithDefault)
 					{
 						bindTexture(TU_Diffuse, m_defaultTextureOne, m_defaultTextureOne);
 					}
@@ -751,7 +750,6 @@ bool OBJModel::loadMaterials(std::string fileName, std::string basePath )
 				{ -1, -1, -1, -1 }, 
 				1.0f, 
 				0,
-				"SHADING_MODEL_DEFAULT"
 			};
 			m_materials[currentMaterial] = m;
 		}
@@ -819,17 +817,12 @@ bool OBJModel::loadMaterials(std::string fileName, std::string basePath )
 		{
 			ss >> m_materials[currentMaterial].alpha;
 		}
-		else if(firstword == "chag_shading_model")
-		{
-			ss >> m_materials[currentMaterial].shadingModel;
-		}
 	}
 
 	// find used shading models.
 	for (MatrialMap::iterator i = m_materials.begin(); i != m_materials.end(); ++i)
 	{
 		Material &m = (*i).second;
-		m_shadingModels.insert(m.shadingModel);
 	}
 
 	// hackfix specular and diffuse colors which are set to 0 by some exporters
@@ -859,6 +852,7 @@ unsigned int OBJModel::loadTexture(std::string fileName, std::string /*basePath*
 	int channels = 0;
 	
 	GLuint texid = 0;
+	stbi_set_flip_vertically_on_load(1);
 	if (unsigned char *data = stbi_load(fileName.c_str(), &width, &height, &channels, 4))
 	{
 
@@ -868,6 +862,9 @@ unsigned int OBJModel::loadTexture(std::string fileName, std::string /*basePath*
 		glBindTexture(GL_TEXTURE_2D, texid);
 		CHECK_GL_ERROR();
 
+		// NOTE: srgb is used to store pretty much all texture image data (except HDR images, which we don't support)
+		// Thus we use the GL_SRGB_ALPHA to ensure they are correctly converted to linear space when loaded into the shader.
+		// However: normal/bump maps/alpha masks, are typically authored in linear space, and so should not be stored as SRGB texture format.
 		glTexImage2D(GL_TEXTURE_2D, 0, srgb ? GL_SRGB_ALPHA : GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 		CHECK_GL_ERROR();
 		std::cout << "    Loaded texture '" << fileName << "', (" << width << "x" << height << ")" << std::endl;
@@ -886,6 +883,10 @@ unsigned int OBJModel::loadTexture(std::string fileName, std::string /*basePath*
 		CHECK_GL_ERROR();
 
 		stbi_image_free(data);
+	}
+	else
+	{
+		std::cout << "    FAILED TO LOAD: texture '" << fileName << "', (" << width << "x" << height << ")" << std::endl;
 	}
 	return texid;
 }
