@@ -32,6 +32,7 @@
 using glm::vec3;
 using glm::vec4;
 using glm::mat4;
+using glm::mat3;
 
 // Initial window size for GLUT
 const int g_startWidth  = 1280;
@@ -51,7 +52,7 @@ const float g_farDistance = 100000.0f; // TODO: Play with far distance, what hap
 
 // 
 const vec3 g_backGroundColour = { 0.1f, 0.2f, 0.1f };
-const vec3 g_lightDirection = { 0.2f, 1.0f, -0.2f };
+const vec3 g_worldSpaceLightDirection = { 0.2f, 1.0f, -0.2f };
 
 GLuint g_simpleShader = 0U;
 
@@ -76,6 +77,9 @@ static void onGlutDisplay()
 	// We don't own the pixels anymore, tell OpenGL to clear them
 	glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
+	// Save all OpenGL state (or all enable/disable etc) - restored with glPopAttrib
+	glPushAttrib(GL_ALL_ATTRIB_BITS);
+
 	// Transform from world space to view space.
 	const mat4 worldToViewTransform = glm::lookAt(g_viewPosition, g_viewTarget, g_viewUp);
 	
@@ -90,24 +94,44 @@ static void onGlutDisplay()
 	const mat4 modelToClipTransform = viewToClipTransform * worldToViewTransform * modelToWorldTransform;
 	// Transform to view space from model space (used for the shading)
 	const mat4 modelToViewTransform = worldToViewTransform * modelToWorldTransform;
+	// Transform to view space for normals, need to use the inverse transpose unless only rigid body & uniform scale.
+	const mat3 modelToViewNormalTransform = inverse(transpose(mat3(modelToViewTransform)));
 
 	// Bind 'use' current shader program 
 	glUseProgram(g_simpleShader);
 	// Set uniform argument in currently bound shader. glGetUniformLocation is typically not a super-fast operation and ought to be done ahead of time (much like other binding)
 	glUniformMatrix4fv(glGetUniformLocation(g_simpleShader, "modelToClipTransform"), 1, GL_FALSE, glm::value_ptr(modelToClipTransform));
 	glUniformMatrix4fv(glGetUniformLocation(g_simpleShader, "modelToViewTransform"), 1, GL_FALSE, glm::value_ptr(modelToViewTransform));
+	glUniformMatrix3fv(glGetUniformLocation(g_simpleShader, "modelToViewNormalTransform"), 1, GL_FALSE, glm::value_ptr(modelToViewNormalTransform));
 
-	vec3 viewSpaceLightDirection = normalize(vec3(modelToViewTransform * vec4(g_lightDirection, 0.0f)));
+	// Transform light direction vector to view space, from world space. Since we know the view matrix is only translation and rotation
+	// we can just use the rotation part (even the normalize is not needed.
+	vec3 viewSpaceLightDirection = normalize(mat3(worldToViewTransform) * g_worldSpaceLightDirection);
+
 	glUniform3fv(glGetUniformLocation(g_simpleShader, "viewSpaceLightDirection"), 1, glm::value_ptr(viewSpaceLightDirection));
 
+	// This enables wireframe rendering.
+	//glPolygonMode(GL_FRONT_AND_BACK,  GL_LINE);
+
 	// Draw different classes of geometry:
+	// We first draw opaque geometry, since it is the cheapest (well, cost per fragment) and sets up the depth buffer.
 	g_model->render(g_simpleShader, OBJModel::RF_Opaque, worldToViewTransform);
+	// Since alpha tested geometry has to do a test & discard per pixel, it is typically much slower to draw, so we do those bits
+	// in pass #2 (added benefit is that those parts that are totally occluded get removed before shading).
 	g_model->render(g_simpleShader, OBJModel::RF_AlphaTested, worldToViewTransform);
+	// Finally we can do transparent things. To get somewhat correct appearance, we sort the transparent items in back to fron order.
+	// or in other words along Z in view space. For this pass we enable OpenGL blending, which uses fixed function hardware to merge 
+	// fragments into the frame buffer.
+	// https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glBlendFunc.xhtml
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	g_model->render(g_simpleShader, OBJModel::RF_Transparent, worldToViewTransform);
 
 	// Unbind the shader program & vertex array object to ensure it does not affect anything else (in this simple program, no great risk, but otherwise it pays to be careful)
 	glBindVertexArray(0);
 	glUseProgram(0);
+
+	glPopAttrib();
 
 	// Instruct the windowing system (by way of GLUT) that the back & front buffer should be exchanged, i.e., we're done drawing this frame
 	glutSwapBuffers();
@@ -242,6 +266,7 @@ in vec2	texCoordAttribute;
 
 uniform mat4 modelToClipTransform;
 uniform mat4 modelToViewTransform;
+uniform mat3 modelToViewNormalTransform;
 
 // Out variables decalred in a vertex shader can be accessed in the subsequent stages.
 // For a pixel shader the variable is interpolated (the type of interpolation can be modified, try placing 'flat' in front, and also in the fragment shader!).
@@ -257,9 +282,9 @@ void main()
   // it must be written in order to produce any drawn geometry. 
   // We transform the position using one matrix multiply from model to clip space, note the added 1 at the end of the position.
 	gl_Position = modelToClipTransform * vec4(positionAttribute, 1.0);
-	// We transform the normal using the model to view transform, but only the rotation part, this is only OK if we know
-	// that there is only ever going ot be uniform scaling involved!
-	v2f_viewSpaceNormal = normalize(mat3(modelToViewTransform) * normalAttribute);
+	// We transform the normal to view space using the normal transform (which is the inverse-transpose of the rotation part of the modelToViewTransform)
+  // Just using the rotation is only valid if the matrix contains only rotation and uniform scaling.
+	v2f_viewSpaceNormal = normalize(modelToViewNormalTransform * normalAttribute);
 	// The texture coordinate is just passed through
 	v2f_texCoord = texCoordAttribute;
 }
@@ -366,7 +391,7 @@ void main()
 
 	// load model:
 	g_model = new OBJModel;
-	g_model->load("data/crysponza/sponza.obj");
+	g_model->load("data/crysponza/sponza_bubbles.obj");
 
 	// Tell GLUT to call 'onGlutDisplay' whenever it needs to re-draw the window.
 	glutDisplayFunc(onGlutDisplay);
