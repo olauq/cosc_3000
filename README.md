@@ -31,10 +31,19 @@ since the fixed function pipeline cannot readily re-create my distance based sha
 Python implementation of the rasterizer project (that is modern OpenGL) - NOT currently working for some reason.
 
 ### structured_ray_tracer
-ray tracer implementation with more structure that makes the main loop more easy to read, it is also a much better starting point for 
+Ray tracer implementation with more structure that makes the main loop more easy to read, it is also a much better starting point for 
 building something supporting more than one object and multiple materials. Or if one wanted to plug in an acceleration structure say.
+
+### rasterizer_with_obj_loader
+More feature-rich real-time renderer which adds texturing, simple shading and loading of external scene data. Uses modern OpenGL and 
+contains an implementation of a model class capable of loading and rendering OBJ format. Supports tranparency (back to front sorting). 
+The lighting is a simple directional light & lambertial shading model. The OBJ loader is fairly fast. The crytek sponza scene is 
+included, by default a version with transparent spheres added is loaded  (sponza_bubbles.obj). The camera is still fixed. To load 
+images for texturing, the code uses 'stb_image.h', which is a single header image loader in the public domain[4]. 
+
 
 ## References
 [1] FreeGLUT http://freeglut.sourceforge.net/
 [2] GLEW http://glew.sourceforge.net/
 [3]	GLM  http://glew.sourceforge.net/
+[4] STB https://github.com/nothings/stb
