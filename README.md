@@ -41,6 +41,10 @@ The lighting is a simple directional light & lambertial shading model. The OBJ l
 included, by default a version with transparent spheres added is loaded  (sponza_bubbles.obj). The camera is still fixed. To load 
 images for texturing, the code uses 'stb_image.h', which is a single header image loader in the public domain[4]. 
 
+### recursive_ray_tracer
+Further extension of the structured ray tracer to perform simple whitted style recursive ray tracing. Implements an ad-hoc shading
+model with a single light, reflections and shadows.
+
 
 ## References
 [1] FreeGLUT http://freeglut.sourceforge.net/
