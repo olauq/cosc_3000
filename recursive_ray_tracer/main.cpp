@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <functional>
 
+#define SIMPLE_SHADING 1
+
 // We're using the 2 & 3 dimensional vectors of GLM so alias these type names to 'vec2' and 'vec3'.
 // The type of the elements of these types is 'float' i.e., single precision (32-bit) floating point numbers.
 using glm::vec3;
@@ -30,7 +32,7 @@ const int g_maxDepth = 8;
 
 static float g_fov = 45.0f;
 
-static vec3 g_ambientLight = { 0.2f, 0.2f, 0.2f };
+static vec3 g_ambientLight = { 0.1f, 0.1f, 0.1f };
 static vec3 g_lightPosition = { -100.0f, 100.0f, 20.0f };
 static vec3 g_lightColour = { 0.9f, 0.9f, 0.9f };
 
@@ -39,7 +41,7 @@ static vec3 g_lightColour = { 0.9f, 0.9f, 0.9f };
 // Experiment by setting it to 0 and see what happens!
 const float g_rayEpsilon = 0.001f;
 // 4. Misc...
-const vec3 g_backGroundColour = { 0.0f, 0.0f, 0.0f};
+const vec3 g_backGroundColour = vec3(0.05f);
 static const float g_pi = 3.1415f;
 inline float degreesToRadians(float degs)
 {
@@ -155,8 +157,11 @@ public:
 	virtual HitInfo intersect(const Ray &ray) = 0;
 
 	// This is sensibly replaced with a more comprehensive material class, or some such that takes care of the shading calculation!
-	vec3 diffuseColour; 
-	float reflectivity;
+	vec3 diffuseReflectance; // How strongis diffuse reflectance, RGB spectral value in range 0-1
+	float shininess; // How shiny is the object, determines the size of the specular highlight, larger value gives smaller spot
+	vec3 baseSpecularReflectance; // This is the R0 value used in the fresnel calculation, represents the reflectance of an object when viewed at 90 degrees
+	float reflectivity; // Hacky parameter to control mirror reflection strength, _should_ be implied by the shininess, i.e., a low shininess should imply low mirror reflection... not clear how
+	                    // this is usually well defined in properly physically based models.
 };
 
 
@@ -237,13 +242,25 @@ Sphere *makeSphere(const vec3 &position, float radius, const vec3 &colour, const
 
 	sphere->position = position;
 	sphere->radius = radius;
-	sphere->diffuseColour = colour;
+	sphere->diffuseReflectance = colour;
 	sphere->reflectivity = reflectivity;
 
 	return sphere;
 }
 
+Sphere *makeSphere(const vec3 &position, float radius, const vec3 &colour, const vec3 baseSpecularReflectance, float shininess, float reflectivity)
+{
+	Sphere *sphere = new Sphere;
 
+	sphere->position = position;
+	sphere->radius = radius;
+	sphere->diffuseReflectance = colour;
+	sphere->shininess = shininess;
+	sphere->baseSpecularReflectance = baseSpecularReflectance;
+	sphere->reflectivity = reflectivity;
+
+	return sphere;
+}
 /**
  * Generates a ray through the pixel (x,y). The ray has unit length and origin at the camera position.
  * Uses the pin-hole camera model, to change the model we could just generate a different distribution.
@@ -334,9 +351,11 @@ bool isRayOccluded(const Ray &ray, const std::vector<Object*> &objects, float ma
 	return false;
 }
 
+#if SIMPLE_SHADING
+
 /**
- * This funciton is called to calculate shading for the hit point.
- */
+* This funciton is called to calculate shading for the hit point.
+*/
 vec3 shade(const Ray &ray, const HitInfo &hit, int depth)
 {
 	// Things missing in this simple light model (experiment with adding them!): 
@@ -349,7 +368,7 @@ vec3 shade(const Ray &ray, const HitInfo &hit, int depth)
 
 	// 1. construct direction to the light (unit length vector)
 	vec3 lightDir = normalize(g_lightPosition - hit.position);
-	
+
 	// 2. test for back facinng, cos(angle) is equivalent to the length of the projection of the light direction on the normal,
 	//    or vice versa, so positive values means they point in the same direction, or in other words, the light is in front of the
 	//    hit point. If it is not, no light will hit the surface from this light source.
@@ -361,7 +380,7 @@ vec3 shade(const Ray &ray, const HitInfo &hit, int depth)
 	// that the currently shaded point belongs to. Note that we don't offset in the light direction since it may be nearly 
 	// tangential, which would then fail to move the starting point outside of the hit object.
 	Ray shadowRay = makeRay(hit.position + hit.normal * g_rayEpsilon, lightDir);
-	
+
 	// Ambient light is a huge hack and is there to replace all the global illumination effects of indirect light bouncing around the scene.
 	// If we did not use this term, any surface not facing the light would be pitch black.
 	vec3 light = g_ambientLight;
@@ -377,7 +396,7 @@ vec3 shade(const Ray &ray, const HitInfo &hit, int depth)
 
 	// The light (both ambient and possible diffuse) is modulated by the material diffuse colour to produce the final 
 	// reflected diffuse light.
-	vec3 resultColour = hit.object->diffuseColour * light;
+	vec3 resultColour = hit.object->diffuseReflectance * light;
 
 	// If we're not too deep (application specified constant, could be replaced with weight based limit
 	// since as we get deeper the contribution to the pixel colour diminishes, unless pure mirrors).
@@ -397,6 +416,107 @@ vec3 shade(const Ray &ray, const HitInfo &hit, int depth)
 	return resultColour;
 }
 
+#else // !SIMPLE_SHADING
+/**
+ * Calculate fresnel term approximation according to schlick's approximation:
+ * Note: takes cos(angle) instead of angle, as this is what we get from the dot product.
+ * 'r0' is the base specular reflectance.
+ */
+inline vec3 F_schlick(const float cosAngle, vec3 r0)
+{
+	return r0 + (1.0f - r0) * powf(1.0f - cosAngle, 5.0f);
+}
+
+
+inline vec3 fSpec(vec3 inDir, vec3 outDir, vec3 normal, float shininess, vec3 r0)
+{
+	vec3 halfVector = normalize(inDir + outDir);
+	return  ((shininess + 2.0f) / (2.0f)) * powf(dot(normal, halfVector), shininess)
+		* F_schlick(std::max(0.0f, dot(inDir, halfVector)), r0);
+}
+/**
+ * This funciton is called to calculate shading for the hit point.
+ */
+vec3 shade(const Ray &ray, const HitInfo &hit, int depth)
+{
+	// 1. construct direction to the light (unit length vector)
+	vec3 lightDir = normalize(g_lightPosition - hit.position);
+	
+	// 2. The ray came from the eye / viewer(works for recusrive rays too!)
+	vec3 viewDir = -ray.direction;
+
+	// 3. calculate cosine of angle between incident light to normal. 
+	float cosAngle = dot(lightDir, hit.normal);
+
+	// 4. The incomming light is thus, simple the light colour & intensity (represented as one RGB value) times the cos(angle)
+	//    NOTE: we also clamp to remove light on back-facing surfaces (angle greater than 90 degrees)
+	vec3 incommingLight = g_lightColour * std::max(0.0f, cosAngle);
+	//return incommingLight;
+	
+	// 5. Ambient light is a huge hack and is there to replace all the global illumination effects of indirect light bouncing around the scene.
+	// If we did not use this term, any surface not facing the light would be pitch black.
+	vec3 resultColour = g_ambientLight * hit.object->diffuseReflectance;
+
+	// 6. Specular reflectance: normalized blinn-phong with schlick fresnel:
+	vec3 f_specular = fSpec(lightDir, viewDir, hit.normal, hit.object->shininess, hit.object->baseSpecularReflectance);
+	//return f_specular * incommingLight;
+
+	// 7. Diffuse reflectance: lambertian BRDF, with removed constant (/pi)
+	vec3 f_diffuse = hit.object->diffuseReflectance;
+	//return f_diffuse * incommingLight + f_specular * incommingLight;
+	//return resultColour + f_diffuse * incommingLight + f_specular * incommingLight;
+
+
+	// Construct a shadow ray, this ray will be used to check for any obstruction between the light and point we are shading
+	// if there is anything in the way, light is blocked and should not be added.
+	// We offset the starting point slightly in the normal direction to avoid self-intersection. I.e., to not hit the object 
+	// that the currently shaded point belongs to. Note that we don't offset in the light direction since it may be nearly 
+	// tangential, which would then fail to move the starting point outside of the hit object.
+	Ray shadowRay = makeRay(hit.position + hit.normal * g_rayEpsilon, lightDir);
+	// check backfacing and if it passes, check for occlusion. Note: C++ has lazy evaluation for logical expressions which means the 
+	// shadow ray will not be tested unless the angle test passes.
+	if (cosAngle > 0.0f && isRayOccluded(shadowRay, g_objects, length(g_lightPosition - hit.position)))
+	{
+		// 8. If something is between the point and the light, there is zero incoming light at this point:
+		incommingLight = vec3(0.0f);
+	}
+
+	// 9. Add the reflected incomming light to the result.
+	resultColour += (f_diffuse + f_specular) * incommingLight;
+	//return resultColour;
+
+	// 10. Use fresnel again to calculate the strength of the reflection, we base this off the strength of the specular reflectance,
+	//     but also use a somewhat hacky 'reflectivity' term. In a physcally based model, this would be implied by a roughness factor
+	//     that also determines the size of the specular highlight.
+	vec3 reflectionWeight = hit.object->reflectivity * F_schlick(std::max(0.0f, dot(viewDir, hit.normal)), hit.object->baseSpecularReflectance); // fSpec(glm::reflect(ray.direction, hit.normal), viewDir, hit.normal, hit.object->shininess, hit.object->baseSpecularReflectance);
+	//return reflectionWeight;
+
+	// If we're not too deep (application specified constant, could be replaced with weight based limit
+	// since as we get deeper the contribution to the pixel colour diminishes, unless pure mirrors).
+	if (depth < g_maxDepth && all(greaterThan(reflectionWeight, vec3(0.0f))))
+	{
+		// Construct reflection ray.
+		Ray reflectionRay;
+		// reflect the ray direction around the normal
+		reflectionRay.direction = glm::reflect(ray.direction, hit.normal);
+		// starting point of reflection ray. We offset the starting point slightly in the normal direction
+		// to avoid self-intersection. Note that we don't offset in the reflection direction since it may be nearly tangential.
+		// Which would then fail to move the starting point outside of the hit object.
+		reflectionRay.origin = hit.position + hit.normal * g_rayEpsilon;
+
+		// Add to result modulated by the weight
+		resultColour += trace(reflectionRay, g_objects, depth + 1) * reflectionWeight;
+	}
+
+	return resultColour;
+}
+
+#endif // SIMPLE_SHADING
+
+inline vec3 toSrgb(vec3 linearSpaceColour)
+{
+	return glm::pow(linearSpaceColour, vec3(1.0f / 2.2f));
+}
 
 // Callback that is called by GLUT system when a frame needs to be drawn, set up in main() using 'glutDisplayFunc'
 static void onGlutDisplay()
@@ -417,7 +537,8 @@ static void onGlutDisplay()
 		{
 			Ray r = generatePinHolePrimaryRay(x, y, camera);
 
-			pixels[y * camera.width + x] = trace(r, g_objects); 
+			// We also convert to srgb colour space since this seems to be what glDrawPixels expects
+			pixels[y * camera.width + x] = toSrgb(trace(r, g_objects)); 
 		}
 	}
 
@@ -449,11 +570,12 @@ int main(int argc, char* argv[])
 	printf("--------------------------------------\nOpenGL\n  Vendor: %s\n  Renderer: %s\n  Version: %s\n--------------------------------------\n", glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION));
 
 	// Set up scene: 
-	g_objects.push_back(makeSphere(vec3(-3.2f, 0.0f, 0.0f), 1.5f, vec3(0.2f, 0.3f, 1.0f))); // blue sphere to the left
-	g_objects.push_back(makeSphere(vec3(0.0f, 2.0f, 0.0f), 1.5f, vec3(0.2f, 0.9f, 0.3f))); // green sphere in the middle and up a bit
-	g_objects.push_back(makeSphere(vec3(3.2f, 0.0f, 0.0f), 1.5f, vec3(0.8f, 0.4f, 0.1f))); // red sphere to the right.
-	g_objects.push_back(makeSphere(vec3(0.0f, -1.0f, 0.0f), 1.0f, vec3(0.1f), 0.9f)); // smaller dark gray with high reflectivity
-	g_objects.push_back(makeSphere(vec3(0.0f, -1003.0f, 0.0f), 1000.0f, vec3(0.8f), 0.0f)); // huge light gray sphere underneath, no refleciton
+	g_objects.push_back(makeSphere(vec3(-3.2f, 0.0f, 0.0f), 1.5f, vec3(0.2f, 0.3f, 1.0f), vec3(0.3f), 5.0f, 0.0f)); // blue sphere to the left
+	g_objects.push_back(makeSphere(vec3(0.0f, 2.0f, 0.0f), 1.5f, vec3(0.2f, 0.9f, 0.3f), vec3(0.3f), 80.0f, 0.8f)); // green sphere in the middle and up a bit
+	g_objects.push_back(makeSphere(vec3(3.2f, 0.0f, 0.0f), 1.5f, vec3(0.8f, 0.1f, 0.1f), vec3(0.02f), 40.0f, 0.8f)); // red sphere to the right.
+	//g_objects.push_back(makeSphere(vec3(0.0f, -1.0f, 0.0f), 1.0f, vec3(0.1f), 0.9f)); // smaller dark gray with high reflectivity
+	g_objects.push_back(makeSphere(vec3(0.0f, -1.0f, 0.0f), 1.5f, vec3(0.0f), vec3(1.0f, 0.71f, 0.29f), 50.0f, 0.99f)); // smaller gold with high reflectivity
+	g_objects.push_back(makeSphere(vec3(0.0f, -1003.0f, 0.0f), 1000.0f, vec3(0.8f), vec3(0.0f), 0.0f, 0.0f)); // huge light gray sphere underneath, no refleciton
 
 	glutDisplayFunc(onGlutDisplay);
 
