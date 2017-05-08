@@ -80,6 +80,8 @@ g_farDistance = 100000.0;
 # 
 g_backGroundColour = vec3(0.1, 0.2, 0.1)
 
+g_sphereVertexArrayObject = 0
+g_simpleShader = 0;
 
 VAL_Position = 0
 
@@ -166,8 +168,8 @@ def setShaderMat(shader, name, mat):
 
 
 def onGlutDisplay2():
-    #global g_simpleShader
-    #global g_sphereVertexArrayObject
+    global g_simpleShader
+    global g_sphereVertexArrayObject
 
     height = glutGet(GLUT_WINDOW_HEIGHT)
     width = glutGet(GLUT_WINDOW_WIDTH)
@@ -194,8 +196,8 @@ def onGlutDisplay2():
 
 
 def onGlutDisplay():
-    #global g_simpleShader
-    #global g_sphereVertexArrayObject
+    global g_simpleShader
+    global g_sphereVertexArrayObject
 
     height = glutGet(GLUT_WINDOW_HEIGHT)
     width = glutGet(GLUT_WINDOW_WIDTH)
@@ -248,7 +250,7 @@ def onGlutDisplay():
 
     glutSwapBuffers() 
 
-# Turns a multidimensional array (3d?) into a 1D array
+# Turns a multidimensional array (3d?) into a 1D array, somehow...
 def flatten(*lll):
 	return [u for ll in lll for l in ll for u in l]
 
@@ -277,7 +279,7 @@ def createVertexArrayObject(vertexPositions):
     # and they are of type 'float'. The last arguments can be used to describe the layout in more detail (stride  & offset).
     # Note: The last adrgument is 'pointer' and has type 'const void *', however, in modern OpenGL, the data ALWAYS comes from the current GL_ARRAY_BUFFER object, 
     # and 'pointer' is interpreted as an offset (which is somewhat clumsy).
-    glVertexAttribPointer(VAL_Position, 3, GL_FLOAT, GL_FALSE, 0, 0)
+    glVertexAttribPointer(VAL_Position, 3, GL_FLOAT, GL_FALSE, 0, None)
     # For the currently bound vertex array object, enable the VAL_Position'th vertex array (otherwise the data is not fed to the shader)
     glEnableVertexAttribArray(VAL_Position)
 
