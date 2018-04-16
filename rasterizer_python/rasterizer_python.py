@@ -1,6 +1,5 @@
 from OpenGL.GL import *
-from OpenGL.GLUT import *
-from OpenGL.GLU import *
+import glfw
 
 import numpy as np
 from ctypes import sizeof, c_float, c_void_p, c_uint, string_at
@@ -167,40 +166,10 @@ def setShaderMat(shader, name, mat):
     glUniformMatrix4fv(index, 1, GL_TRUE, np.ascontiguousarray(mat, dtype=np.float32))
 
 
-def onGlutDisplay2():
+
+def renderFrame(width, height):
     global g_simpleShader
     global g_sphereVertexArrayObject
-
-    height = glutGet(GLUT_WINDOW_HEIGHT)
-    width = glutGet(GLUT_WINDOW_WIDTH)
-
-    glViewport(0, 0, width, height)
-    glClearColor(0.2, 0.3, 0.1, 1.0)
-    # We don't own the pixels anymore, tell OpenGL to clear them
-    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT)
-
-    glMatrixMode(GL_PROJECTION)
-    glLoadIdentity()
-    glMatrixMode(GL_MODELVIEW)
-    glLoadIdentity()
-
-    glColor3f(1.0, 0.0, 0.0);
-
-    glBegin(GL_TRIANGLES)
-    glVertex3f(0.5, 0.0, 0.0);
-    glVertex3f(0.0, 0.5, 0.0);
-    glVertex3f(-0.5, 0.0, 0.0);
-    glEnd()
-
-    glutSwapBuffers() 
-
-
-def onGlutDisplay():
-    global g_simpleShader
-    global g_sphereVertexArrayObject
-
-    height = glutGet(GLUT_WINDOW_HEIGHT)
-    width = glutGet(GLUT_WINDOW_WIDTH)
 
     glViewport(0, 0, width, height)
     glClearColor(0.2, 0.3, 0.1, 1.0)
@@ -242,13 +211,11 @@ def onGlutDisplay():
     # Tell OpenGL to draw triangles using data from the currently bound vertex array object by grabbing
     # three at a time vertices from the array up to g_numSphereVerts vertices, for(int i = 0; i < g_numSphereVerts; i += 3) ... draw triangle ...
     glDrawArrays(GL_TRIANGLES, 0, g_numSphereVerts)
-	
+
     # Unbind the shader program & vertex array object to ensure it does not affect anything else (in this simple program, no great risk, but otherwise it pays to be careful)
     glBindVertexArray(0);
     glUseProgram(0);
 
-
-    glutSwapBuffers() 
 
 # Turns a multidimensional array (3d?) into a 1D array, somehow...
 def flatten(*lll):
@@ -289,24 +256,23 @@ def createVertexArrayObject(vertexPositions):
     return (positionBuffer, vertexArrayObject)
 
 
+if not glfw.init():
+    sys.exit(1)
 
-glutInitContextFlags(GLUT_DEBUG);
+glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
+glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
+glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, GL_TRUE)
 
-glutInit("")
-glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE)
-glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS)
+#glfw.window_hint(glfw.SAMPLES, g_currentMsaaSamples)
 
-glutInitWindowSize(g_startWidth, g_startHeight)
 
-glutCreateWindow(b"A 'simple' OpenGL >= 3.0 program")
+window = glfw.create_window(g_startWidth, g_startHeight, "A 'simple' OpenGL >= 3.0 program", None, None)
+if not window:
+    glfw.terminate()
+    sys.exit(1)
 
-glDebugMessageCallback(GLDEBUGPROC(debugMessageCallback), None)
-
-# (although this glEnable(GL_DEBUG_OUTPUT) should not have been needed when using the GLUT_DEBUG flag above...)
-glEnable(GL_DEBUG_OUTPUT)
-# This ensures that the callback is done in the context of the calling function, which means it will be on the stack in the debugger, which makes it
-# a lot easier to figure out why it happened.
-glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS)
+glfw.make_context_current(window)
 
 print("--------------------------------------\nOpenGL\n  Vendor: %s\n  Renderer: %s\n  Version: %s\n--------------------------------------\n"%(glGetString(GL_VENDOR).decode("utf8"), glGetString(GL_RENDERER).decode("utf8"), glGetString(GL_VERSION).decode("utf8")));
 
@@ -385,7 +351,14 @@ glEnable(GL_CULL_FACE)
 glEnable(GL_DEPTH_TEST)
 glDepthFunc(GL_LEQUAL)
 
-# Tell GLUT to call 'onGlutDisplay' whenever it needs to re-draw the window.
-glutDisplayFunc(onGlutDisplay);
+while not glfw.window_should_close(window):
+    width, height = glfw.get_framebuffer_size(window)
+    renderFrame(width, height)
 
-glutMainLoop()
+    # Swap front and back buffers
+    glfw.swap_buffers(window)
+
+    # Poll for and process events
+    glfw.poll_events()
+
+glfw.terminate()
